@@ -1,9 +1,9 @@
 {
-  "versionCode": 39,
-  "versionName": "1.1.1",
+  "versionCode": 40,
+  "versionName": "1.1.2",
   "apk": {
-    "browser": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.1/1VIEW-Browser.apk",
-    "deetv": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.1/1VIEW-DeeTV.apk"
+    "browser": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.2/1VIEW-Browser.apk",
+    "deetv": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.2/1VIEW-DeeTV.apk"
   },
-  "notes": "Lines for Multi, stall watchdog, in-app updates."
+  "notes": "Update banner: Later or Install puts it away for a day."
 }
