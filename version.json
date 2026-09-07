@@ -1,9 +1,9 @@
 {
-  "versionCode": 40,
-  "versionName": "1.1.2",
+  "versionCode": 41,
+  "versionName": "1.1.3",
   "apk": {
-    "browser": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.2/1VIEW-Browser.apk",
-    "deetv": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.2/1VIEW-DeeTV.apk"
+    "browser": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.3/1VIEW-Browser.apk",
+    "deetv": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.3/1VIEW-DeeTV.apk"
   },
-  "notes": "Update banner: Later or Install puts it away for a day."
+  "notes": "Installs on Fire OS 6 sticks (Android 7.1) such as the 2018 Fire TV Stick 4K and the first Cube."
 }
