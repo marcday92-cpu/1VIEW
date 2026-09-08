@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">1VIEW</string>
+    <string name="watch_now">Watch Now</string>
+    <string name="notification_channel_reminders">Programme Reminders</string>
+    <string name="notification_channel_recording">Recording</string>
+    <string name="reminder_starts_in">starts in %d minutes</string>
+    <string name="recording_active">Recording</string>
+    <string name="recording_stay_awake_title">Keeping Fire Stick awake</string>
+    <string name="recording_stay_awake_text">Next: %1$s at %2$s</string>
+    <string name="recording_stay_awake_waiting">A recording is scheduled</string>
+</resources>
