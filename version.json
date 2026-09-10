@@ -1,8 +1,8 @@
 {
-  "versionCode": 45,
-  "versionName": "1.1.7",
+  "versionCode": 49,
+  "versionName": "1.1.11",
   "apk": {
-    "browser": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.7/1VIEW-Browser.apk"
+    "browser": "https://github.com/marcday92-cpu/1VIEW/releases/download/v1.1.11/1VIEW-Browser.apk"
   },
-  "notes": "Catch-up, CEST timeshift, Catch-up focus, and Web page scroll."
+  "notes": "Live EPG hours, compact listings, and Back stack."
 }
