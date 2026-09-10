@@ -25,8 +25,8 @@ android {
         applicationId = "com.iptv.tv"
         minSdk = 25
         targetSdk = 35
-        versionCode = 45
-        versionName = "1.1.7"
+        versionCode = 49
+        versionName = "1.1.11"
         ndk {
             abiFilters += "armeabi-v7a"
         }
@@ -72,7 +72,7 @@ android {
     // Two editions from one code base. Only the Web tab differs: the DeeTV edition ships the
     // DeeTV shortcut, the Browser edition is a plain address-bar browser. See src/deetv and
     // src/browser for the single EditionConfig object each one provides.
-    // Browser is the default / GitHub identity (versionName 1.1.7). DeeTV stays a local flavour
+    // Browser is the default / GitHub identity (versionName 1.1.11). DeeTV stays a local flavour
     // with a -deetv suffix so it is never the published default.
     flavorDimensions += "edition"
     productFlavors {
@@ -119,6 +119,7 @@ android {
     packaging {
         jniLibs {
             pickFirsts += "**/libc++_shared.so"
+            excludes += setOf("**/x86/**", "**/x86_64/**", "**/arm64-v8a/**")
         }
     }
 

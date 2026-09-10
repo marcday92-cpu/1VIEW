@@ -9,6 +9,7 @@ import com.iptv.tv.data.repository.EpgRepository
 import com.iptv.tv.data.repository.IptvRepository
 import com.iptv.tv.data.repository.ProfileRepository
 import com.iptv.tv.domain.model.AdultContent
+import com.iptv.tv.domain.model.CatchupAvailability
 import com.iptv.tv.domain.model.Category
 import com.iptv.tv.domain.model.Channel
 import com.iptv.tv.domain.model.ContentType
@@ -61,6 +62,8 @@ data class LiveUiState(
     val selected: Channel? = null,
     val now: Programme? = null,
     val next: Programme? = null,
+    /** After [now]: rest of today and into tomorrow from XMLTV or short EPG. */
+    val upcoming: List<Programme> = emptyList(),
     val isFavourite: Boolean = false,
     val sourceFilter: LiveSourceFilter = LiveSourceFilter.ALL,
     val hasIptvLogin: Boolean = false,
@@ -107,6 +110,8 @@ class LiveViewModel @Inject constructor(
     private val selectedStream = MutableStateFlow<Int?>(null)
     private val _revealNonce = MutableStateFlow(0)
     val revealNonce: StateFlow<Int> = _revealNonce.asStateFlow()
+    private val _focusedProgrammeId = MutableStateFlow<String?>(null)
+    val focusedProgrammeId: StateFlow<String?> = _focusedProgrammeId.asStateFlow()
 
     private val searchOpen = MutableStateFlow(false)
     private val searchQuery = MutableStateFlow("")
@@ -148,7 +153,7 @@ class LiveViewModel @Inject constructor(
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LiveUiState())
 
-    /** The focused channel, its favourite flag and its now/next programmes. Cheap. */
+    /** The focused channel, its favourite flag and its now / upcoming programmes. Cheap until short EPG. */
     private val selection = combine(listState, selectedStream) { list, id ->
         list.channels.firstOrNull { it.streamId == id }
     }.distinctUntilChanged()
@@ -156,14 +161,11 @@ class LiveViewModel @Inject constructor(
             if (channel == null) return@flatMapLatest flowOf(Selection())
             flow {
                 emit(Selection(channel))
-                val epgId = channel.epgChannelId?.takeIf { it.isNotBlank() } ?: return@flow
-                emit(
-                    Selection(
-                        channel,
-                        now = epgRepository.getCurrentProgramme(epgId),
-                        next = epgRepository.getNextProgramme(epgId),
-                    ),
-                )
+                val local = loadSchedule(channel, fetchShortEpg = false)
+                emit(local)
+                if (!channel.isFree && LiveSchedule.needsShortEpg(local.upcoming.size)) {
+                    emit(loadSchedule(channel, fetchShortEpg = true))
+                }
             }
         }
         .flowOn(Dispatchers.IO)
@@ -173,6 +175,7 @@ class LiveViewModel @Inject constructor(
             selected = sel.channel,
             now = sel.now,
             next = sel.next,
+            upcoming = sel.upcoming,
             isFavourite = sel.channel?.streamId?.let { it in list.favouriteIds } == true,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LiveUiState())
@@ -261,6 +264,13 @@ class LiveViewModel @Inject constructor(
         if (clearChannel) selectedStream.value = null
     }
 
+    fun cycleRail(delta: Int) {
+        val rails = state.value.rails
+        if (rails.isEmpty()) return
+        val index = rails.indexOfFirst { it.id == state.value.selectedRailId }.coerceAtLeast(0)
+        selectRail(rails[(index + delta).mod(rails.size)].id)
+    }
+
     fun setSourceFilter(filter: LiveSourceFilter) {
         selectedRail.value = ""
         selectedStream.value = null
@@ -271,10 +281,25 @@ class LiveViewModel @Inject constructor(
     val liveBrowse = playbackController.liveBrowse
     val playerState = playbackController.playerManager.state
     val playerManager = playbackController.playerManager
+    val timeshiftWhileLive: StateFlow<Boolean> = preferences.timeshiftWhileLive
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun selectChannel(id: Int, requestFocus: Boolean = false) {
         selectedStream.value = id
         if (requestFocus) _revealNonce.value++
+    }
+
+    fun onChannelFocused(id: Int) {
+        selectedStream.value = id
+        _focusedProgrammeId.value = null
+    }
+
+    fun onProgrammeFocused(id: String) {
+        _focusedProgrammeId.value = id
+    }
+
+    fun restoreFocus() {
+        _revealNonce.value++
     }
 
     fun play(channel: Channel, browse: Boolean? = null) {
@@ -309,6 +334,7 @@ class LiveViewModel @Inject constructor(
 
     fun stopPreview() {
         playbackController.close()
+        restoreFocus()
     }
 
 
@@ -329,26 +355,92 @@ class LiveViewModel @Inject constructor(
     }
 
     fun remind(channel: Channel, offsetMinutes: Int) {
-        if (!IptvCapabilities.canRemind(channel, credentialsStore.hasCredentials())) return
-        launchSafely("LiveViewModel.remind") {
+        launchSafely("LiveViewModel.remindNext") {
             val epgId = channel.epgChannelId ?: return@launchSafely
-            val next = epgRepository.getNextProgramme(epgId) ?: epgRepository.getCurrentProgramme(epgId) ?: return@launchSafely
+            val next = epgRepository.getNextProgramme(epgId)
+                ?: epgRepository.getCurrentProgramme(epgId)
+                ?: return@launchSafely
+            remindProgramme(channel, next, offsetMinutes)
+        }
+    }
+
+    fun remindProgramme(channel: Channel, programme: Programme, offsetMinutes: Int) {
+        if (!IptvCapabilities.canRemind(channel, credentialsStore.hasCredentials())) return
+        launchSafely("LiveViewModel.remindProgramme") {
             reminderScheduler.scheduleReminder(
                 profileRepository.getActiveProfileId(),
                 channel.streamId,
                 channel.name,
-                next.title,
-                next.startTimeMs,
+                programme.title,
+                programme.startTimeMs,
                 offsetMinutes,
             )
         }
     }
 
     fun record(channel: Channel) {
-        if (!IptvCapabilities.canRecord(channel, credentialsStore.hasCredentials())) return
-        launchSafely("LiveViewModel.record") {
+        launchSafely("LiveViewModel.recordNow") {
             val now = channel.epgChannelId?.let { epgRepository.getCurrentProgramme(it) }
-            recordingManager.startOrSchedule(channel, now, 0, preferences.recordingEndBufferMinutes.first(), true)
+            recordProgramme(channel, now, startImmediately = true)
+        }
+    }
+
+    fun recordProgramme(channel: Channel, programme: Programme?, startImmediately: Boolean = programme?.isLiveNow == true) {
+        if (!IptvCapabilities.canRecord(channel, credentialsStore.hasCredentials())) return
+        launchSafely("LiveViewModel.recordProgramme") {
+            recordingManager.startOrSchedule(
+                channel,
+                programme,
+                preferences.recordingStartBufferMinutes.first(),
+                preferences.recordingEndBufferMinutes.first(),
+                startImmediately,
+            )
+        }
+    }
+
+    fun watchFromSheet(channel: Channel, programme: Programme) {
+        if (programme.isLiveNow) {
+            play(channel)
+            return
+        }
+        val current = playbackController.session.value
+        val alreadyBrowsing = playbackController.liveBrowse.value &&
+            current?.type == ContentType.LIVE &&
+            current.streamId == channel.streamId
+        if (alreadyBrowsing) return
+        play(channel, browse = true)
+    }
+
+    fun watchFromStart(channel: Channel, programme: Programme) {
+        val hasLogin = credentialsStore.hasCredentials()
+        val catchup = CatchupAvailability.watchCatchup(channel, programme, hasLogin)
+        val restart = CatchupAvailability.restartProgramme(
+            channel,
+            programme,
+            timeshiftWhileLive.value,
+            hasLogin,
+        )
+        if (!catchup && !restart) return
+        launchSafely("LiveViewModel.watchFromStart") {
+            val durationMin = ((programme.endTimeMs - programme.startTimeMs) / 60_000L).toInt().coerceAtLeast(1)
+            val url = runCatching { iptvRepository.timeshiftUrl(channel, programme.startTimeMs, durationMin) }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: return@launchSafely
+            playbackController.play(
+                com.iptv.tv.player.PlaybackSession(
+                    type = ContentType.MOVIE,
+                    streamId = channel.streamId,
+                    title = channel.name,
+                    subtitle = programme.title,
+                    url = url,
+                    posterUrl = channel.logoUrl,
+                    contentKey = "catchup_${channel.streamId}_${programme.startTimeMs}",
+                    channel = channel,
+                    headers = PlaybackController.playbackHeaders(channel, url),
+                    openedFrom = PlaybackOpenedFrom.LIVE,
+                ),
+            )
         }
     }
 
@@ -579,10 +671,36 @@ class LiveViewModel @Inject constructor(
         )
     }
 
+    private suspend fun loadSchedule(channel: Channel, fetchShortEpg: Boolean): Selection {
+        val nowMs = System.currentTimeMillis()
+        val epgId = channel.epgChannelId?.takeIf { it.isNotBlank() }
+        val local = if (epgId != null) {
+            epgRepository.getProgrammesForChannel(epgId, nowMs, nowMs + LiveSchedule.HORIZON_MS)
+        } else {
+            emptyList()
+        }
+        val short = if (fetchShortEpg) {
+            iptvRepository.getShortEpg(channel.streamId, LiveSchedule.SHORT_EPG_LIMIT)
+        } else {
+            emptyList()
+        }
+        val (now, upcoming) = LiveSchedule.splitNowAndUpcoming(
+            LiveSchedule.merge(local, short, nowMs),
+            nowMs,
+        )
+        return Selection(
+            channel = channel,
+            now = now,
+            next = upcoming.firstOrNull(),
+            upcoming = upcoming,
+        )
+    }
+
     private data class Selection(
         val channel: Channel? = null,
         val now: Programme? = null,
         val next: Programme? = null,
+        val upcoming: List<Programme> = emptyList(),
     )
 
     private data class LiveIds(
