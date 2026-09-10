@@ -12,7 +12,12 @@ class EditionConfigTest {
     @Test
     fun editionMatchesBuildFlavour() {
         assertEquals(BuildConfig.EDITION, EditionConfig.id)
-        assertTrue(BuildConfig.VERSION_NAME.endsWith("-${EditionConfig.id}"))
+        when (EditionConfig.id) {
+            // Browser is the published identity: versionName stays 1.1.11 with no suffix.
+            "browser" -> assertTrue(!BuildConfig.VERSION_NAME.contains("-deetv"))
+            "deetv" -> assertTrue(BuildConfig.VERSION_NAME.endsWith("-deetv"))
+            else -> error("Unknown edition ${EditionConfig.id}")
+        }
     }
 
     @Test
